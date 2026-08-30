@@ -1,0 +1,32 @@
+# dependencies
+/node_modules
+
+# next.js
+/.next/
+/out/
+*.tsbuildinfo
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# env files — 비밀값은 절대 커밋하지 않는다
+.env
+.env.*
+!.env.example
+
+# vercel
+.vercel
+
+# supabase local
+supabase/.temp
+supabase/.branches

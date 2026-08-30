@@ -1,0 +1,22 @@
+# supabase CLI 최소 설정 — `supabase link --project-ref <ref>` 후 `supabase db push` 로
+# migrations/ 를 적용한다. project ref는 미확정 슬롯이므로 여기 하드코딩하지 않는다.
+project_id = "kongjuworld"
+
+[api]
+enabled = true
+# Only the app schema is exposed through PostgREST. Storage uses its dedicated
+# API and does not require exposing the storage schema here.
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[auth]
+# 공개 회원가입 차단: 초대된 이메일은 /api/auth/login 이 admin API로 계정을 만든 뒤
+# OTP(shouldCreateUser:false)만 발송한다. 원격 프로젝트 대시보드에서도
+# Authentication → Sign In / Providers → "Allow new users to sign up" 을 꺼 둔다.
+enable_signup = false
+
+[auth.email]
+enable_signup = false
+double_confirm_changes = true
+enable_confirmations = false
