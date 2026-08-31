@@ -42,3 +42,37 @@ psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
 
 실제 모바일 기기에서는 로그인, TOTP MFA, 사진 업로드, 다중 다운로드 허용, 화면 회전과 작은 화면
 내비게이션을 Preview 환경에서 한 번 더 확인한 뒤 운영 전환 여부를 결정합니다.
+
+## 원격 적용 기록 (2026-08-31 UTC)
+
+「수령 후 필수 통합 검사」 중 원격 DB 적용분을 새로 만든 빈 Supabase 프로젝트에 수행했습니다.
+적용 전 대상 프로젝트가 비어 있음을 확인했습니다: public 테이블 0개, migration history 0건,
+Storage 버킷 0개. 기존 운영 DB에 적용한 것이 아닙니다.
+
+| 항목 | 결과 |
+| --- | --- |
+| migration 5개 원격 적용 | 완료 |
+| remote migration history | `20260830000001`~`20260830000005` 로 파일명과 일치 |
+| `supabase/tests/security_regression.sql` | 원격 DB에서 22개 단언 전부 통과 |
+| Storage 버킷 | `photos`, `thumbs` 생성, 둘 다 Private |
+| Supabase security advisor | WARN 2건 — 설계상 의도된 항목 |
+| owner 시드 | family 1건, owner 구성원 1건 생성 (`user_id`는 최초 로그인 시 연결) |
+
+advisor 경고 2건은 `public.add_photos_to_album`과 `public.claim_membership`이 `authenticated`에게
+EXECUTE 되어 있다는 내용입니다. 두 함수 모두 본문에서 AAL2와 활성 멤버십을 직접 검사하므로
+의도된 설계입니다.
+
+migration은 Supabase CLI가 아닌 관리 API로 적용했습니다. 이 경로는 버전을 적용 시각으로 기록하므로,
+이후 `supabase db push`가 5개를 미적용으로 오인하지 않도록 history의 version을 파일명 접두사와
+일치하도록 정정했습니다.
+
+## 배포 전환 시 남은 항목
+
+다음 항목은 migration으로 반영되지 않으므로 콘솔에서 직접 설정하고 확인해야 합니다.
+
+- hosted Auth 설정: 공개 가입 차단, TOTP MFA 활성화, Magic Link redirect URL 등록
+- Vercel 환경변수 등록 — `NEXT_PUBLIC_*` 값은 빌드 시점에 번들에 포함되므로, 등록 전에 만들어진
+  배포는 값을 나중에 추가해도 재배포 전까지 반영되지 않습니다
+- 운영 도메인 연결과 DNS 레코드 등록
+- `CRON_SECRET`은 Production 환경에만 등록
+- 첫 로그인 TOTP 등록, 다음 로그인 challenge, AAL1 차단 확인
