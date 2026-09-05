@@ -142,13 +142,43 @@ migration은 이번에도 Supabase CLI가 아닌 관리 API로 적용했으므�
   통과, `do $$` 블록의 `delete from` 차단, `alter table … drop column` 차단,
   이미 적용된 migration 파일 수정 차단.
 
+### Vercel 프로젝트 정리
+
+Vercel GitHub App을 설치한 뒤, `c003-del/kongju`에 Vercel 프로젝트가 두 개
+연결된 상태가 되었습니다. 하나만 남깁니다.
+
+| 프로젝트 | 처리 |
+| --- | --- |
+| `kongju` | **유지.** 이 저장소의 Vercel 프로젝트 |
+| `kongju-memory` | 삭제 |
+
+「Vercel 프로젝트 연결 기록 (2026-09-05 UTC)」의 `kongjuworld` 항목은 이 저장소에
+연결된 프로젝트가 아닙니다. 그 기록의 Production scope 변수 목록도 `kongju`에는
+적용되지 않으므로, 아래 변수를 새로 등록해야 합니다.
+
+`kongju`는 새로 만든 프로젝트라 환경변수가 비어 있습니다. Production scope에
+등록할 이름(값은 기록하지 않습니다):
+
+| 변수 | scope | 비고 |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Production | `krddetoqnsdlznzhdvre` 기준 |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Production | publishable key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Production, Sensitive | 같은 프로젝트의 secret key |
+| `CRON_SECRET` | Production, Sensitive | 32바이트 이상 임의값 |
+| `SOFT_DELETE_RETENTION_DAYS` | Production | `30` |
+| `TRAINING_PREVIEW_ENABLED` | Production | `false` |
+| `ENABLE_HSTS` | Production | `false` (단계 G 이후 `true`) |
+| `NEXT_PUBLIC_SITE_URL` | Production | 배포 URL 확정 후 등록하고 재배포 |
+
+`NEXT_PUBLIC_*`, canonical, HSTS는 빌드 시점에 번들에 들어가므로 값을 바꾼 뒤
+반드시 재배포해야 반영됩니다.
+
+Production Branch가 `main`인지, Git 연결이 `c003-del/kongju`인지 콘솔에서
+확인합니다.
+
 ### 남은 항목
 
-- **Vercel GitHub App 미설치** — `c003-del/kongju`에 <https://github.com/apps/vercel>
-  가 설치되어 있지 않아 Git 연동 프로젝트를 만들 수 없었습니다. 설치 후 Import
-  하면 이후 `main` 머지 배포는 토큰 없이 동작합니다.
-- Vercel 환경변수 등록 (`.env.example`의 이름 기준, `SUPABASE_SERVICE_ROLE_KEY`와
-  `CRON_SECRET`은 Sensitive).
+- 위 Vercel 환경변수 등록과 `kongju-memory` 삭제.
 - hosted Auth 설정: 공개 가입 차단, TOTP MFA 활성화, Site URL과 `/auth/confirm`
   Redirect URL 등록, Magic Link 템플릿.
 - `supabase/seed.example.sql` 기준 family 1개와 owner 초대 1건 생성.
