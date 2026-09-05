@@ -105,3 +105,51 @@ Hobby 플랜의 cron은 1일 1회로 제한되므로 `vercel.json`의 `0 18 * * 
 
 수령 소스 기준 로컬 검증은 `pnpm install --frozen-lockfile`, `pnpm typecheck`,
 `pnpm build` 모두 통과했습니다(단계 A).
+
+## 배포 대상 전환과 자동 배포 구성 (2026-09-05 UTC)
+
+배포 대상 Supabase 프로젝트를 `krddetoqnsdlznzhdvre`(리전 `ap-southeast-2`)로
+확정하고 `main` 기준 소스를 적용했습니다. 적용 전 대상이 비어 있음을 확인했습니다:
+public 테이블 0개, migration history 0건.
+
+| 항목 | 결과 |
+| --- | --- |
+| migration 5개 원격 적용 | 완료 |
+| remote migration history | `20260830000001`~`20260830000005` 로 파일명과 일치 |
+| `supabase/tests/security_regression.sql` | 원격 DB에서 22개 단언 전부 통과 |
+| Storage 버킷 | `photos`(50 MiB, 5종 MIME), `thumbs`(5 MiB, WebP) 생성, 둘 다 Private |
+| Supabase security advisor | WARN 2건 — 설계상 의도된 항목 |
+
+advisor 경고 2건은 `public.add_photos_to_album`과 `public.claim_membership`이
+`authenticated`에게 EXECUTE 되어 있다는 내용입니다. 두 함수 모두 본문에서 AAL2와
+활성 멤버십을 직접 검사하므로 의도된 설계입니다.
+
+이전 프로젝트 `sddkavaejlificbjmmql`은 이번 작업에서 조회만 했고 변경하지
+않았습니다.
+
+migration은 이번에도 Supabase CLI가 아닌 관리 API로 적용했으므로(이 환경에서는
+`api.supabase.com`과 DB 직결이 모두 막혀 있습니다) history의 version을 파일명
+접두사와 일치하도록 정정했습니다. 이후 `supabase db push`가 5개를 미적용으로
+오인하지 않습니다.
+
+### 자동 배포
+
+- Supabase: `.github/workflows/deploy-supabase.yml` 추가. `main` 머지 시
+  `supabase/migrations/**` 변경분만 `supabase db push`로 적용합니다.
+  `scripts/guard-migrations.sh`가 파괴적 SQL과 기존 migration 파일 변경을
+  적용 전에 차단합니다. 상세는 [SETUP.md](SETUP.md) 10장.
+- 게이트 동작은 로컬에서 4개 시나리오로 확인했습니다: 함수 본문의 `delete from`
+  통과, `do $$` 블록의 `delete from` 차단, `alter table … drop column` 차단,
+  이미 적용된 migration 파일 수정 차단.
+
+### 남은 항목
+
+- **Vercel GitHub App 미설치** — `c003-del/kongju`에 <https://github.com/apps/vercel>
+  가 설치되어 있지 않아 Git 연동 프로젝트를 만들 수 없었습니다. 설치 후 Import
+  하면 이후 `main` 머지 배포는 토큰 없이 동작합니다.
+- Vercel 환경변수 등록 (`.env.example`의 이름 기준, `SUPABASE_SERVICE_ROLE_KEY`와
+  `CRON_SECRET`은 Sensitive).
+- hosted Auth 설정: 공개 가입 차단, TOTP MFA 활성화, Site URL과 `/auth/confirm`
+  Redirect URL 등록, Magic Link 템플릿.
+- `supabase/seed.example.sql` 기준 family 1개와 owner 초대 1건 생성.
+- 첫 로그인 TOTP 등록, 다음 로그인 challenge, AAL1 차단 확인.

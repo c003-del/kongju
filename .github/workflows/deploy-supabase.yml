@@ -1,0 +1,116 @@
+name: Deploy Supabase migrations
+
+# main에 머지되면 아직 원격 history에 없는 migration만 앞으로 적용한다.
+# `supabase db push`는 DB를 reset하지 않고 이미 적용된 migration을 다시 실행하지도
+# 않는다. 그래서 자동 적용의 유일한 데이터 손실 경로는 "파괴적 SQL이 담긴 새
+# migration이 머지되는 것"이고, scripts/guard-migrations.sh 가 그 경로를 막는다.
+# 파괴적 migration은 머지만으로는 절대 적용되지 않으며, 아래 수동 실행에서
+# project ref를 사람이 직접 입력해야만 적용된다.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**'
+      - 'scripts/guard-migrations.sh'
+      - '.github/workflows/deploy-supabase.yml'
+  workflow_dispatch:
+    inputs:
+      project_ref:
+        description: '적용 대상 Supabase project ref를 직접 입력(오타 방지용 재확인)'
+        required: true
+        type: string
+      allow_destructive:
+        description: '파괴적 migration을 승인. 백업을 확인한 뒤에만 사용'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: supabase-migrations-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  push-migrations:
+    runs-on: ubuntu-latest
+    # 이 environment에 required reviewer를 걸면 적용 직전에 사람이 한 번 더 승인한다.
+    environment: supabase-production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve configuration
+        id: cfg
+        env:
+          ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+          INPUT_REF: ${{ inputs.project_ref }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$ACCESS_TOKEN" || -z "$DB_PASSWORD" || -z "$PROJECT_REF" ]]; then
+            echo "::notice::SUPABASE_ACCESS_TOKEN / SUPABASE_DB_PASSWORD secret 또는 SUPABASE_PROJECT_REF 변수가 없어 건너뜁니다."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ ! "$PROJECT_REF" =~ ^[a-z0-9]{20}$ ]]; then
+            echo "::error::SUPABASE_PROJECT_REF 형식이 올바르지 않습니다."
+            exit 1
+          fi
+          if [[ -n "$INPUT_REF" && "$INPUT_REF" != "$PROJECT_REF" ]]; then
+            echo "::error::입력한 project ref가 설정값과 다릅니다. 아무것도 적용하지 않고 중단합니다."
+            exit 1
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Guard against destructive or rewritten migrations
+        if: steps.cfg.outputs.ready == 'true'
+        env:
+          # push(머지) 경로에서는 승인 값을 설정하지 않는다. 파괴적 migration은
+          # 사람이 project ref를 직접 입력한 수동 실행에서만 통과할 수 있다.
+          ALLOW_DESTRUCTIVE: ${{ (github.event_name == 'workflow_dispatch' && inputs.allow_destructive) && '1' || '0' }}
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            ./scripts/guard-migrations.sh "${{ github.event.before }}" "${{ github.sha }}"
+          else
+            ./scripts/guard-migrations.sh
+          fi
+
+      - uses: supabase/setup-cli@v1
+        if: steps.cfg.outputs.ready == 'true'
+        with:
+          version: latest
+
+      - name: Link project
+        if: steps.cfg.outputs.ready == 'true'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: supabase link --project-ref "${{ vars.SUPABASE_PROJECT_REF }}"
+
+      - name: Show pending migrations
+        if: steps.cfg.outputs.ready == 'true'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          supabase migration list --linked
+          supabase db push --dry-run
+
+      - name: Apply migrations
+        if: steps.cfg.outputs.ready == 'true'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: supabase db push --yes
+
+      - name: Migration history after apply
+        if: steps.cfg.outputs.ready == 'true'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: supabase migration list --linked
