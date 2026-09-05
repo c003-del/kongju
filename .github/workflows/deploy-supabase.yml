@@ -38,6 +38,12 @@ jobs:
     runs-on: ubuntu-latest
     # 이 environment에 required reviewer를 걸면 적용 직전에 사람이 한 번 더 승인한다.
     environment: supabase-production
+    env:
+      # CLI가 그대로 읽는 이름들. project ref는 비밀이 아니므로 Variable을 권장하지만,
+      # Secret으로 등록해도 동작하도록 둘 다 받는다.
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF || secrets.SUPABASE_PROJECT_REF }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -46,22 +52,23 @@ jobs:
       - name: Resolve configuration
         id: cfg
         env:
-          ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-          PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
           INPUT_REF: ${{ inputs.project_ref }}
         run: |
           set -euo pipefail
-          if [[ -z "$ACCESS_TOKEN" || -z "$DB_PASSWORD" || -z "$PROJECT_REF" ]]; then
-            echo "::notice::SUPABASE_ACCESS_TOKEN / SUPABASE_DB_PASSWORD secret 또는 SUPABASE_PROJECT_REF 변수가 없어 건너뜁니다."
+          missing=()
+          [[ -n "${SUPABASE_ACCESS_TOKEN:-}" ]] || missing+=('secret SUPABASE_ACCESS_TOKEN')
+          [[ -n "${SUPABASE_DB_PASSWORD:-}" ]]  || missing+=('secret SUPABASE_DB_PASSWORD')
+          [[ -n "${SUPABASE_PROJECT_REF:-}" ]]  || missing+=('variable 또는 secret SUPABASE_PROJECT_REF')
+          if (( ${#missing[@]} > 0 )); then
+            echo "::notice::${missing[*]} 가 없어 아무것도 적용하지 않고 종료합니다."
             echo "ready=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if [[ ! "$PROJECT_REF" =~ ^[a-z0-9]{20}$ ]]; then
-            echo "::error::SUPABASE_PROJECT_REF 형식이 올바르지 않습니다."
+          if [[ ! "$SUPABASE_PROJECT_REF" =~ ^[a-z0-9]{20}$ ]]; then
+            echo "::error::SUPABASE_PROJECT_REF 형식이 올바르지 않습니다(소문자·숫자 20자)."
             exit 1
           fi
-          if [[ -n "$INPUT_REF" && "$INPUT_REF" != "$PROJECT_REF" ]]; then
+          if [[ -n "${INPUT_REF:-}" && "$INPUT_REF" != "$SUPABASE_PROJECT_REF" ]]; then
             echo "::error::입력한 project ref가 설정값과 다릅니다. 아무것도 적용하지 않고 중단합니다."
             exit 1
           fi
@@ -73,9 +80,11 @@ jobs:
           # push(머지) 경로에서는 승인 값을 설정하지 않는다. 파괴적 migration은
           # 사람이 project ref를 직접 입력한 수동 실행에서만 통과할 수 있다.
           ALLOW_DESTRUCTIVE: ${{ (github.event_name == 'workflow_dispatch' && inputs.allow_destructive) && '1' || '0' }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
         run: |
           if [[ "${{ github.event_name }}" == "push" ]]; then
-            ./scripts/guard-migrations.sh "${{ github.event.before }}" "${{ github.sha }}"
+            ./scripts/guard-migrations.sh "$BEFORE_SHA" "$HEAD_SHA"
           else
             ./scripts/guard-migrations.sh
           fi
@@ -87,30 +96,18 @@ jobs:
 
       - name: Link project
         if: steps.cfg.outputs.ready == 'true'
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-        run: supabase link --project-ref "${{ vars.SUPABASE_PROJECT_REF }}"
+        run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
 
       - name: Show pending migrations
         if: steps.cfg.outputs.ready == 'true'
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: |
           supabase migration list --linked
           supabase db push --dry-run
 
       - name: Apply migrations
         if: steps.cfg.outputs.ready == 'true'
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: supabase db push --yes
 
       - name: Migration history after apply
         if: steps.cfg.outputs.ready == 'true'
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: supabase migration list --linked

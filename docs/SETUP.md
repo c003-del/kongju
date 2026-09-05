@@ -378,12 +378,15 @@ pnpm build
 
 | 종류 | 이름 | 값 |
 | --- | --- | --- |
-| Variable | `SUPABASE_PROJECT_REF` | 대상 프로젝트의 20자 ref |
+| Variable 또는 Secret | `SUPABASE_PROJECT_REF` | 대상 프로젝트의 20자 ref |
 | Secret | `SUPABASE_ACCESS_TOKEN` | Supabase 계정의 access token (`sbp_...`) |
 | Secret | `SUPABASE_DB_PASSWORD` | 프로젝트 DB 비밀번호 |
 
-셋 중 하나라도 없으면 워크플로는 아무것도 적용하지 않고 알림만 남기고 끝난다.
-따라서 secret을 넣기 전에는 머지해도 DB가 바뀌지 않는다.
+`SUPABASE_PROJECT_REF`는 비밀값이 아니라 Variable 탭이 자연스럽지만, Secret으로
+등록해도 동작한다. 워크플로가 두 곳을 모두 읽는다.
+
+셋 중 하나라도 없으면 워크플로는 아무것도 적용하지 않고, 무엇이 비어 있는지만
+알림으로 남기고 끝난다. 따라서 등록 전에는 머지해도 DB가 바뀌지 않는다.
 
 `supabase-production` environment에 required reviewer를 지정하면 적용 직전에
 사람이 한 번 더 승인하게 만들 수 있다(Settings → Environments).
