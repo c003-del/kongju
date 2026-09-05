@@ -76,3 +76,32 @@ migration은 Supabase CLI가 아닌 관리 API로 적용했습니다. 이 경로
 - 운영 도메인 연결과 DNS 레코드 등록
 - `CRON_SECRET`은 Production 환경에만 등록
 - 첫 로그인 TOTP 등록, 다음 로그인 challenge, AAL1 차단 확인
+
+## Vercel 프로젝트 연결 기록 (2026-09-05 UTC)
+
+HANDOVER 단계 F에 따라 이 저장소 전용 Vercel 프로젝트를 만들고 GitHub에 연결했습니다.
+값 자체는 기록하지 않고 "어디에 어떤 이름을 어느 scope로 넣었는지"만 남깁니다.
+
+| 항목 | 값 |
+| --- | --- |
+| Vercel 팀 | `HPeng` (slug `hp-eng`, Hobby) |
+| Vercel 프로젝트 | `kongjuworld` |
+| Git 연결 | `c003-del/kongju`, Production Branch `main` |
+| Supabase 프로젝트 | ref `sddkavaejlificbjmmql`, 리전 `ap-northeast-2` |
+
+Production scope에 등록 완료한 변수 이름:
+`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+`SUPABASE_SERVICE_ROLE_KEY`(Sensitive), `CRON_SECRET`(Sensitive),
+`SOFT_DELETE_RETENTION_DAYS`, `TRAINING_PREVIEW_ENABLED`, `ENABLE_HSTS`.
+
+아직 등록하지 않은 변수와 그 조건:
+
+- `NEXT_PUBLIC_SITE_URL` — 첫 배포 URL이 확정된 뒤 등록하고 재배포합니다.
+- `NEXT_PUBLIC_CANONICAL_HOST`, `CANONICAL_REDIRECT_HOST` — 운영 도메인 연결 후.
+- `ENABLE_HSTS=true` 전환 — TLS와 모든 서브도메인 확인 후 (단계 G).
+
+Hobby 플랜의 cron은 1일 1회로 제한되므로 `vercel.json`의 `0 18 * * *` 스케줄은 그대로
+유효합니다. 다만 Hobby에서는 실행 시각이 정확히 보장되지 않습니다.
+
+수령 소스 기준 로컬 검증은 `pnpm install --frozen-lockfile`, `pnpm typecheck`,
+`pnpm build` 모두 통과했습니다(단계 A).
