@@ -349,3 +349,70 @@ pnpm build
 - [Supabase private buckets](https://supabase.com/docs/guides/storage/buckets/fundamentals)
 - [Vercel environment variables](https://vercel.com/docs/environment-variables)
 - [Vercel Cron Jobs](https://vercel.com/docs/cron-jobs)
+
+## 10. main 머지 자동 배포
+
+배포 경로를 두 개로 나눈다. 앱은 Vercel Git 연동이, DB migration은 GitHub Actions가
+담당한다. 두 경로 모두 **만료되는 개인 토큰에 의존하지 않도록** 구성한다.
+
+### 10-1. Vercel — Git 연동 (토큰 불필요)
+
+1. <https://github.com/apps/vercel> 에서 Vercel GitHub App을 설치하고
+   `c003-del/kongju` 저장소에 접근 권한을 준다.
+2. Vercel에서 이 저장소를 Import 해 프로젝트를 만들고 Production Branch를 `main`으로 둔다.
+3. Settings → Environment Variables에 `.env.example`의 값을 직접 등록한다.
+
+이후 `main`에 머지되면 Vercel이 GitHub webhook을 받아 스스로 Production 배포를
+실행한다. Vercel 토큰을 저장소나 CI에 넣을 필요가 없고, 개인 토큰이 만료돼도
+배포는 계속 동작한다. PR에는 Preview 배포가 자동으로 생성된다.
+
+`NEXT_PUBLIC_*`, canonical host, HSTS 값은 빌드 시점에 번들에 들어간다. 값을
+바꾼 뒤에는 반드시 재배포해야 반영된다.
+
+### 10-2. Supabase — `.github/workflows/deploy-supabase.yml`
+
+`supabase/migrations/**`가 바뀐 채로 `main`에 머지되면 워크플로가
+`supabase db push`로 **아직 원격 history에 없는 migration만** 적용한다.
+
+필요한 저장소 설정 (Settings → Secrets and variables → Actions):
+
+| 종류 | 이름 | 값 |
+| --- | --- | --- |
+| Variable | `SUPABASE_PROJECT_REF` | 대상 프로젝트의 20자 ref |
+| Secret | `SUPABASE_ACCESS_TOKEN` | Supabase 계정의 access token (`sbp_...`) |
+| Secret | `SUPABASE_DB_PASSWORD` | 프로젝트 DB 비밀번호 |
+
+셋 중 하나라도 없으면 워크플로는 아무것도 적용하지 않고 알림만 남기고 끝난다.
+따라서 secret을 넣기 전에는 머지해도 DB가 바뀌지 않는다.
+
+`supabase-production` environment에 required reviewer를 지정하면 적용 직전에
+사람이 한 번 더 승인하게 만들 수 있다(Settings → Environments).
+
+### 10-3. 자동 적용의 안전 경계
+
+`supabase db push`는 DB를 reset하지 않고, 이미 적용된 migration을 다시 실행하지
+않으며, 앞으로 나아가는 새 파일만 적용한다. 그러므로 "머지 실수로 DB가 날아가는"
+경로는 하나뿐이다 — **파괴적 SQL이 든 새 migration 파일이 머지되는 것**.
+`scripts/guard-migrations.sh`가 적용 전에 그 경로를 막는다.
+
+| 상황 | 결과 |
+| --- | --- |
+| 새 migration에 `drop table/schema/column/…`, `truncate`, `delete from` | 워크플로 **실패**, 아무것도 적용되지 않음 |
+| 이미 적용된 migration 파일을 수정·삭제·이름변경 | 워크플로 **실패** (history는 append-only) |
+| `create function` 본문 안의 `delete from` | 통과 (적용 시점에 실행되지 않음) |
+| `do $$ … $$;` 블록 안의 파괴적 SQL | 차단 (즉시 실행되므로) |
+| `drop policy` / `drop trigger` / `drop function` | 통과 (데이터 손실이 아님) |
+
+즉 **`main` 머지만으로는 파괴적 migration이 적용되지 않는다.** 정말 필요하면
+백업을 확인한 뒤 Actions → "Deploy Supabase migrations"를 수동 실행하고,
+`project_ref`를 사람이 직접 입력하며 `allow_destructive`를 켜야 한다.
+
+게이트는 로컬에서도 그대로 돌릴 수 있다.
+
+```bash
+./scripts/guard-migrations.sh origin/main HEAD
+```
+
+남는 위험은 자동화가 아니라 리뷰의 문제다. 파괴적이지 않은 migration이라도
+잘못된 제약이나 인덱스를 추가할 수 있으므로 migration이 든 PR은 사람이 읽고
+머지한다. 되돌릴 수 없는 변경 전에는 Supabase 백업 상태를 먼저 확인한다.
