@@ -81,3 +81,5 @@ Auth URL/Magic Link, private Storage, Vercel 환경변수와 Cron을 설정합�
 - TOTP 분실 복구 담당자·신원 확인·승인 기록 절차가 지정됨
 
 검증을 마치기 전에는 프로덕션 도메인을 연결하거나 기존 서비스를 교체하지 마세요.
+<!-- deploy trigger -->
+chore: trigger vercel deploy
